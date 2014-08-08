@@ -1,7 +1,6 @@
-
-## "Getting and Cleaning Data - Coursera Project"
-??uthor: "Nikolaos Lamprou"
-date: "August 8, 2014"
+## Getting and Cleaning Data - Coursera Project
+author: Nikolaos Lamprou
+date: August 8, 2014
 
 
 This work aims to clean and transform the provided raw data into two tidy datasets
