@@ -1,9 +1,9 @@
----
-title: "Getting and Cleaning Data - Coursera Project"
-author: "Nikolaos Lamprou"
+
+## "Getting and Cleaning Data - Coursera Project"
+??uthor: "Nikolaos Lamprou"
 date: "August 8, 2014"
-output: html_document
----
+
+
 This work aims to clean and transform the provided raw data into two tidy datasets
 - tidyDataset.txt   Including all variables containing means or std of variables, by activity and subject
 - avg_tidyDataset.txt   Inclusing the mean of all above measurents by activity and subject
