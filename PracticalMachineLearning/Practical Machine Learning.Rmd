@@ -1,0 +1,194 @@
+---
+title: "Practical Machine Learning - Assignment"
+author: "Nikolaos Lamprou"
+date: "January 23, 2015"
+output: html_document
+---
+
+##Introduction
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+The goal of this work is to build a model to predict the manner in which the exercise is performed using data from accelerometers on the belt, forearm, arm, and dumbell of the 6 participants. 
+
+##Getting and Cleaning Data
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The manner in which the exercise is performed is the "classe" variable.
+
+The data are loaded into memory and missing or erroneous values are replaced by NAs to make cleaning the data easier.
+
+```{r}
+raw.training <- read.csv("/Users/nikolaoslamprou/Desktop/Data Science/Practical Machine Learning/pml-training.csv",
+                         na.strings=c("#DIV/0!", "","NA"))
+
+raw.testing <- read.csv("/Users/nikolaoslamprou/Desktop/Data Science/Practical Machine Learning/pml-testing.csv",
+                        na.strings=c("#DIV/0!", "","NA"))
+```
+
+The dimensions of the raw datasets are:
+
+```{r}
+dim(raw.training)
+dim(raw.testing)
+```
+
+A large number of columns have missing/erroneous values. For the purpose of better prediction accuracy and the reduction of the number of predictors, only columns without NAs are selected.
+
+```{r}
+clean.training<-raw.training[,colSums(is.na(raw.training)) == 0]
+clean.testing <-raw.testing[,colSums(is.na(raw.testing)) == 0]
+```
+
+Variables in columns 1 to 7 (such as rownumber, user_name, timestamps etc.) are irrelevant to the classifictation and are removed.
+
+```{r}
+final.training <- clean.training[,-c(1:7)]
+final.testing <- clean.testing[,-c(1:7)]
+```
+The dimension of the final (cleaned) datasets we will be using are:
+
+```{r}
+dim(final.training)
+dim(final.testing)
+```
+##Data Slicing and Cross-validation
+
+1 fold cross-validation will be performed by subsampling our final.training data set randomly without replacement into 2 subsamples: training.tr data (70% of the original final.training data set) and training.cv data (30%). 
+
+Two models are fitted on the training.tr data set, and tested on the training.cv dataset. The out of sample is then estimated.
+
+Set seed (123) for reproducability of results.
+```{r}
+set.seed(123)
+```
+
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(y=final.training$classe, p=0.7, list=FALSE)
+training.tr <- final.training[inTrain, ] 
+training.cv <- final.training[-inTrain, ]
+dim(training.tr)
+dim(training.cv)
+```
+
+
+##Building and Evaluating Predictive Models
+
+
+Load necessary libraries
+```{r,warning=FALSE,message=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot) 
+library(rattle)
+library(randomForest)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+###Classification Tree
+```{r}
+modelTree <- rpart(classe ~ ., data=training.tr, method="class")
+confusionMatrix(training.cv$classe,predict(modelTree,training.cv,type="class"))
+```
+
+Plot the classification tree
+```{r,fig.width=12,fig.height=8}
+fancyRpartPlot(modelTree)
+```
+
+###Random Forest
+
+```{r}
+modelRF <- randomForest(classe ~ ., data=training.tr, method="class",ntree=100)
+predictionRF <- predict(modelRF,training.cv,type="class")
+confusionMatrix(training.cv$classe,predictionRF)
+
+modelRF
+```
+
+The plot below shows the importance of the each predictor in the classification process.
+```{r}
+varImpPlot(modelRF,)
+```
+
+The first plot below shows how the classe varible is distributed amongst the two most important variables for classification. The plot on the right shows where the missclassifications occured on the same space.
+
+```{r,fig.height=7,fig.width=12}
+training.cv$predRight <- predictionRF==training.cv$classe
+q1 <- qplot(roll_belt,pitch_belt,colour=classe,data=training.cv,
+            main="Classe variable in CV data",size=I(0.9))
+q2 <- qplot(roll_belt,pitch_belt,colour=predRight,data=training.cv,
+            main="Prediction Errors on CV data",size=I(0.9))
+
+grid.arrange(q1, q2, ncol=2)
+```
+
+
+##Estimate Out-of-sample Error
+
+The expected out-of-sample error corresponds to the expected number of missclassified observations/total observations in the Test data set. This is equivalent to the quantity: 1 - accuracy found from the cross-validation data set.
+
+
+### 5-Fold Cross Validation
+From the above model we se that the expected out-of-sample error is estimated at 0.005, or 0.5%. However, due to overfitting, we may be underestimating the out-of-sample error. A more rigorous approach is considered below, where we take 5 folds or resamples of the data, fit a model using random forests and calculate the out-of-sample error for each resample. Finally, an average of the errors is calculated. 
+
+Set number of folds to 5 and create the resampling indicies.
+```{r}
+k <- 5
+inTrain <- createDataPartition(y=final.training$classe,times=k,p=0.7,list=F)
+```
+
+Perform fit and calculate Out-of-sample error for each resampling.
+```{r}
+OOSE <- data.frame()
+for (i in 1:k){
+  trainingset <- final.training[inTrain[,i],]
+  testset <- final.training[-inTrain[,i],]
+ 
+  modelRF.cv <- randomForest(trainingset$classe ~ ., data = trainingset,method="class",
+                             ntree = 100)
+ 
+  Predicted <- predict(modelRF.cv, testset,type="class")
+  Actual <- testset$classe
+  Result <- data.frame(Predicted=Predicted,Actual=Actual)
+ 
+  tempOOSE <- data.frame(oose=nrow(Result[Result$Predicted != Result$Actual,])/nrow(Result))
+  OOSE <- rbind(OOSE,tempOOSE) 
+}
+```
+
+We calculate the average of the out-of-sample errors.
+```{r}
+mean(OOSE$oose)
+```
+The out-of-sample error estimate is of the same order as before at 0.005234 or 0.52%.
+
+
+
+##Predictions for Submission
+The random forest model is the most accurate and is used to predict on the testing set for submission.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("/Users/nikolaoslamprou/Desktop/Data Science/Practical Machine Learning/Answers/problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+predict(modelRF,final.testing,type="class")
+
+#pml_write_files(predict(modelRF,final.testing,type="class"))
+```
